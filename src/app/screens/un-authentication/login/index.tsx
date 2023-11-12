@@ -1,241 +1,188 @@
-import React, { useRef } from 'react';
-import {
-  StatusBar,
-  StyleSheet,
-  useWindowDimensions,
-  ViewProps,
-} from 'react-native';
-
-import {
-  runOnJS,
-  useAnimatedProps,
-  useAnimatedStyle,
-  useDerivedValue,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
-
-import { OutlineButton } from '@components/button/outline-button';
-import { PrimaryButton } from '@components/button/primary-button';
-import { SecondaryButton } from '@components/button/secondary-button';
-import { Checkbox } from '@components/checkbox';
-import { Divider } from '@components/divider';
-import { RadioButton } from '@components/radio-button';
-import { Screen } from '@components/screen';
-import { Tabs } from '@components/tabs';
-import { AnimatedView, Text, View } from '@rn-core';
-import {
-  Canvas,
-  Circle,
-  Image,
-  ImageShader,
-  makeImageFromView,
-  SkImage,
-} from '@shopify/react-native-skia';
-import { createStyleSheet, useStyles } from '@theme';
-import { darkTheme } from '@theme/dark';
-import { lightTheme } from '@theme/light';
-import { save } from '@utils/storage';
-
-const wait = (ms: number) => {
-  return new Promise(resolve => {
-    setTimeout(resolve, ms);
-  });
-};
+import { useEffect } from 'react';
 
 export const Login = () => {
   // state
 
-  const { height } = useWindowDimensions();
+  const testPerfomance = () => {
+    /**
+- Emit 1 promise
+- Run with promise.all
+- Callback nao resolve truoc thi chay truoc
+*/
 
-  const r = useSharedValue(0);
+    // Func emit like realtime
+    const listPromise: Record<string, Promise<any>> = {};
 
-  const opacity = useSharedValue(0);
+    const listIndexMatchPromise: Record<string, Array<number>> = {};
 
-  const image1 = useSharedValue<SkImage | null>(null);
+    const newPromisePrice = (key: string, callback: (data: any) => void) => {
+      return new Promise(resolveInner => {
+        resolveInner(callback);
+      });
+    };
 
-  const image2 = useSharedValue<SkImage | null>(null);
+    const emitDataSymbol = (key: string, dataSymbol: any, i: number) => {
+      const indexs = listIndexMatchPromise[key];
 
-  const rootRef = useRef<View>(null);
+      const index = indexs[i];
 
-  const { styles, theme } = useStyles(styleSheet);
+      const promise = listPromise[key + index];
 
-  // func
-  const updateStatusBar = (prevType: string) => {
-    StatusBar.setBarStyle(
-      prevType !== 'dark' ? 'light-content' : 'dark-content',
-    );
-  };
+      if (promise) {
+        promise.then(cb => {
+          cb(dataSymbol);
 
-  const handleChangeTheme = async () => {
-    opacity.value = 1;
-
-    const overlay1 = await makeImageFromView(rootRef);
-
-    image1.value = overlay1;
-
-    await wait(100);
-
-    save('APP_THEME', theme.type === 'dark' ? lightTheme : darkTheme);
-
-    await wait(100);
-
-    const overlay2 = await makeImageFromView(rootRef);
-
-    image2.value = overlay2;
-
-    await wait(100);
-
-    r.value = withTiming(height * 1.5, { duration: 500 }, f => {
-      if (f) {
-        runOnJS(updateStatusBar)(theme.type);
-
-        opacity.value = 0;
-
-        r.value = 0;
-
-        image2.value = null;
-
-        image1.value = null;
+          if (i <= indexs.length - 1) {
+            emitDataSymbol(key, dataSymbol, i + 1);
+          }
+        });
+      } else {
+        if (i <= indexs.length - 1) {
+          emitDataSymbol(key, dataSymbol, i + 1);
+        }
       }
-    });
+    };
+
+    const sub = (key: string, promise: Promise<any>) => {
+      let newKey = key + 0;
+      const indexs = listIndexMatchPromise[key];
+
+      if (indexs?.length > 0) {
+        const lastIndex = indexs[indexs.length - 1];
+
+        const newIndex = lastIndex + 1;
+
+        listIndexMatchPromise[key].push(newIndex);
+
+        newKey = key + newIndex;
+
+        listPromise[newKey] = promise;
+
+        return () => {
+          delete listPromise[newKey];
+        };
+      }
+
+      listIndexMatchPromise[key] = [0];
+
+      listPromise[newKey] = promise;
+
+      return () => {
+        delete listPromise[newKey];
+      };
+    };
+
+    // Fake data
+    function getSymbolCode(length: number) {
+      let result = '';
+      const characters = 'ABC';
+
+      const charactersLength = characters.length;
+
+      let counter = 0;
+      while (counter < length) {
+        const character = characters.charAt(
+          Math.floor(Math.random() * charactersLength),
+        );
+
+        if (result.includes(character)) {
+          continue;
+        }
+
+        result += character;
+
+        counter += 1;
+      }
+
+      return result.toUpperCase();
+    }
+
+    const randomDataSymbol = () => {
+      return {
+        price: (Math.random() * 100).toFixed(2),
+        symbol: getSymbolCode(3),
+      };
+    };
+
+    let timeout1: any = null;
+    let timeout3: any = null;
+
+    const unSub1 = sub(
+      'ABC',
+      newPromisePrice('ABC', data => {
+        if (timeout1) {
+          clearTimeout(timeout1);
+        }
+
+        timeout1 = setTimeout(() => {
+          console.log('Recevier data emit: 1', data);
+        }, 4000);
+      }),
+    );
+
+    sub(
+      'ABC',
+      newPromisePrice('ABC', data => {
+        if (timeout3) {
+          clearTimeout(timeout3);
+        }
+
+        timeout3 = setTimeout(() => {
+          console.log('Recevier data emit: 2', data);
+        }, 2000);
+      }),
+    );
+
+    const unSub3 = sub(
+      'ABC',
+      newPromisePrice('ABC', data => {
+        console.log('Recevier data emit: 3', data);
+      }),
+    );
+
+    setTimeout(() => {
+      unSub1();
+
+      unSub3();
+
+      console.log('Have been unSub 1, 3 subscrible', listPromise);
+    }, 10000);
+
+    setTimeout(() => {
+      sub(
+        'ABC',
+        newPromisePrice('ABC', data => {
+          console.log('Recevier data emit: 4', data);
+        }),
+      );
+    }, 10000);
+
+    setTimeout(() => {
+      sub(
+        'ABC',
+        newPromisePrice('ABC', data => {
+          console.log('Recevier data emit: 5', data);
+        }),
+      );
+    }, 12000);
+
+    setInterval(() => {
+      const dataSymbol = randomDataSymbol();
+
+      emitDataSymbol('ABC', dataSymbol, 0);
+    }, 3000);
   };
 
-  // props
-  const canvasProps = useAnimatedProps<ViewProps>(() => ({
-    pointerEvents: opacity.value === 1 ? 'auto' : 'none',
-  }));
+  useEffect(() => {
+    const timout = setTimeout(() => {
+      testPerfomance();
+    }, 1000);
 
-  const canvasStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
-  }));
-
-  const size = useSharedValue({ width: 0, height: 0 });
-
-  const widthCanvas = useDerivedValue(() => size.value.width);
-
-  const heightCanvas = useDerivedValue(() => size.value.height);
-
-  const circleC = useDerivedValue(() => ({
-    x: widthCanvas.value / 2,
-    y: heightCanvas.value,
-  }));
+    return () => {
+      clearTimeout(timout);
+    };
+  }, []);
 
   // render
-  return (
-    <>
-      <View ref={rootRef} style={styles.root}>
-        <Screen
-          bottomInsetColor="transparent"
-          scroll
-          excludeEdges={['bottom']}
-          statusBarStyle="dark-content"
-          style={{ paddingVertical: 0, paddingHorizontal: 10 }}
-          backgroundColor={'transparent'}>
-          <View style={styles.rowItem}>
-            <Text style={styles.text}>Divider</Text>
-            <Divider />
-          </View>
-          <View style={styles.rowItem}>
-            <Text style={styles.text}>Radio Button</Text>
-            <RadioButton initialValue={true} disabled />
-            <RadioButton />
-          </View>
-          <View style={styles.colItem}>
-            <Text style={styles.text}>Tabs</Text>
-            <Tabs
-              tabs={[
-                { key: '1', title: 'tabs:tab1' },
-                { key: '2', title: 'tabs:tab2' },
-                { key: '3', title: 'tabs:tab3' },
-                { key: '4', title: 'tabs:tab4' },
-              ]}
-            />
-          </View>
-          <View style={styles.rowItem}>
-            <Text style={styles.text}>Checkbox</Text>
-            <Checkbox initialValue={true} disabled />
-            <Checkbox />
-          </View>
-          <View style={styles.colItem}>
-            <Text style={styles.text}>Primary Button</Text>
-            <PrimaryButton
-              onPress={handleChangeTheme}
-              text="Button change theme"
-            />
-            <PrimaryButton disabled text="Button" />
-            <PrimaryButton leftIcon="chevron_left" text="Button" />
-            <PrimaryButton disabled leftIcon="chevron_left" text="Button" />
-            <PrimaryButton rightIcon="chevron_left" text="Button" />
-            <PrimaryButton disabled rightIcon="chevron_left" text="Button" />
-          </View>
-          <View style={styles.colItem}>
-            <Text style={styles.text}>Secondary Button</Text>
-            <SecondaryButton text="Button" />
-            <SecondaryButton disabled text="Button" />
-            <SecondaryButton leftIcon="chevron_left" text="Button" />
-            <SecondaryButton disabled leftIcon="chevron_left" text="Button" />
-            <SecondaryButton rightIcon="chevron_left" text="Button" />
-            <SecondaryButton disabled rightIcon="chevron_left" text="Button" />
-          </View>
-          <View style={styles.colItem}>
-            <Text style={styles.text}>Outline Button</Text>
-            <OutlineButton text="Button" />
-            <OutlineButton disabled text="Button" />
-            <OutlineButton leftIcon="chevron_left" text="Button" />
-            <OutlineButton disabled leftIcon="chevron_left" text="Button" />
-            <OutlineButton rightIcon="chevron_left" text="Button" />
-            <OutlineButton disabled rightIcon="chevron_left" text="Button" />
-          </View>
-        </Screen>
-      </View>
-      <AnimatedView
-        style={[StyleSheet.absoluteFillObject, canvasStyle]}
-        animatedProps={canvasProps}>
-        <Canvas onSize={size} style={[StyleSheet.absoluteFillObject]}>
-          <Image
-            x={0}
-            y={0}
-            fit={'cover'}
-            width={widthCanvas}
-            height={heightCanvas}
-            image={image1}
-          />
-
-          <Circle c={circleC} r={r}>
-            <ImageShader
-              width={widthCanvas}
-              height={heightCanvas}
-              image={image2}
-              fit={'cover'}
-            />
-          </Circle>
-        </Canvas>
-      </AnimatedView>
-    </>
-  );
+  return null;
 };
-
-const styleSheet = createStyleSheet(theme => ({
-  text: {
-    ...theme.textPresets.label,
-    color: theme.color.neutral500,
-  },
-  root: {
-    flex: 1,
-    paddingTop: 0,
-    paddingHorizontal: 15,
-    backgroundColor: theme.color.background,
-  },
-  rowItem: {
-    flexDirection: 'row',
-    paddingVertical: 15,
-    alignItems: 'center',
-    columnGap: 8,
-  },
-  colItem: {
-    paddingVertical: 15,
-    rowGap: 8,
-    alignItems: 'flex-start',
-  },
-}));
